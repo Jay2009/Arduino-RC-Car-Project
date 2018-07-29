@@ -1,0 +1,144 @@
+
+#include <stdio.h>
+#include "pic24_all.h"
+#include <xc.h>
+#include <stdint.h>
+uint16_t pwm[2]={0};
+uint16_t steering[2]={0};
+// LED1 configuration and access
+// =============================
+#define CONFIG_PWM1() CONFIG_RB3_AS_DIG_OUTPUT()
+#define PWM1 (_LATB3)     //led1 state
+#define CONFIG_FORWARD() CONFIG_RB1_AS_DIG_OUTPUT()
+#define FORWARD (_LATB1)     //led1 state
+#define CONFIG_BACKWARD() CONFIG_RB2_AS_DIG_OUTPUT()
+#define BACKWARD (_LATB2)     //led1 state
+#define CONFIG_STEERING() CONFIG_RA2_AS_DIG_OUTPUT()
+#define STEERING (_LATA2)     //led1 state
+
+
+
+//Interrupt Service Routine for Timer3
+void _ISR _T3Interrupt(void) {
+  _T3IF = 0;                 //clear the timer interrupt bit
+ PWM1^=1;
+ PR3=pwm[PWM1];
+}
+
+void _ISR _T2Interrupt(void) {
+  _T2IF = 0;                 //clear the timer interrupt bit
+  STEERING^=1;
+  PR2=steering[STEERING];
+}
+
+// in ms
+#define ISR_PERIOD (2)
+void  configTimer3(void) {
+  //ensure that Timer2,3 configured as separate timers.
+  T2CONbits.T32 = 0;     // 32-bit mode off
+  //T3CON set like this for documentation purposes.
+  //could be replaced by T3CON = 0x0020
+  T3CON = T3_OFF |T3_IDLE_CON | T3_GATE_OFF
+          | T3_SOURCE_INT
+          | T3_PS_1_64 ;  //results in T3CON= 0x0020
+  PR3 = msToU16Ticks (ISR_PERIOD, getTimerPrescale(T3CONbits)) - 1;
+  TMR3  = 0;                       //clear timer3 value
+  _T3IF = 0;                       //clear interrupt flag
+  _T3IP = 1;                       //choose a priority
+  _T3IE = 1;                       //enable the interrupt
+  T3CONbits.TON = 1;               //turn on the timer
+}
+
+#define ISR_PERIOD (2)
+void  configTimer2(void) {
+  //ensure that Timer2,3 configured as separate timers.
+  T2CONbits.T32 = 0;     // 32-bit mode off
+  //T3CON set like this for documentation purposes.
+  //could be replaced by T3CON = 0x0020
+  T2CON = T2_OFF |T2_IDLE_CON | T2_GATE_OFF
+          | T2_SOURCE_INT
+          | T2_PS_1_64 ;  //results in T3CON= 0x0020
+  PR2 = msToU16Ticks (ISR_PERIOD, getTimerPrescale(T3CONbits)) - 1;
+  TMR2  = 0;                       //clear timer3 value
+  _T2IF = 0;                       //clear interrupt flag
+  _T2IP = 1;                       //choose a priority
+  _T2IE = 1;                       //enable the interrupt
+  T2CONbits.TON = 1;               //turn on the timer
+}
+
+// main
+// ====
+// This code initializes the system, then runs the state machine above when
+// the pushbutton's value changes.
+uint16_t msTof16Ticks(double u16_ms, uint16_t u16_pre) {
+  // Use a float internally for precision purposes to accomodate wide range of FCY, u16_pre
+  float f_ticks = FCY;
+  uint16_t u16_ticks;
+  f_ticks = (f_ticks*u16_ms)/u16_pre/1E3;
+  ASSERT(f_ticks < 65535.5);
+  u16_ticks = roundFloatToUint16(f_ticks);  //back to integer
+  return u16_ticks;
+}
+int main (void) {
+  // Configure the hardware.
+  
+  configBasic(HELLO_MSG);
+ 
+  CONFIG_PWM1();
+  CONFIG_FORWARD();
+  CONFIG_BACKWARD();
+  CONFIG_STEERING();
+  
+  configTimer3();
+  configTimer2();
+  
+  //pwm[0]=msTof16Ticks (2*0.10, getTimerPrescale(T3CONbits)) - 1;
+  //pwm[1]=msTof16Ticks (2*0.90, getTimerPrescale(T3CONbits)) - 1;
+  
+ 
+  // Initialize the state machine's extended state to its starting value.
+  //LED1 = 0;
+     PWM1 = 0;
+     FORWARD = 0;
+     BACKWARD = 0;
+     STEERING = 0;
+  while (1) {
+  
+  pwm[0]=msTof16Ticks (2*0.10, getTimerPrescale(T3CONbits)) - 1;
+  pwm[1]=msTof16Ticks (2*0.90, getTimerPrescale(T3CONbits)) - 1;
+
+  //fast
+  FORWARD = 1;
+  BACKWARD = 0;
+  DELAY_MS(2000);
+   
+   steering[0]=msTof16Ticks (2*0.10, getTimerPrescale(T3CONbits)) - 1;
+   steering[1]=msTof16Ticks (2*0.90, getTimerPrescale(T3CONbits)) - 1;
+   DELAY_MS(2000); 
+  
+  
+      
+      
+
+  pwm[0]=msTof16Ticks (2*0.10, getTimerPrescale(T3CONbits)) - 1;
+  pwm[1]=msTof16Ticks (2*0.90, getTimerPrescale(T3CONbits)) - 1;
+  
+  // slow if pwm1 is low
+  FORWARD = 0;
+  BACKWARD = 1;
+  DELAY_MS(2000);
+  
+  steering[0]=msTof16Ticks (2*0.50, getTimerPrescale(T3CONbits)) - 1;
+  steering[1]=msTof16Ticks (2*0.50, getTimerPrescale(T3CONbits)) - 1;
+  DELAY_MS(2000);  
+  
+      //while(1){
+      //LED2 = !LED2;
+      //PULSE_WIDTH = 2;
+      
+      //}
+    // Blink the heartbeat LED to confirm that the program is running.
+    doHeartbeat();
+  }
+  
+}
